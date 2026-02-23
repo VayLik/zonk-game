@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zonk Online</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="login-screen" class="screen-container active">
+        <div class="modal-box">
+            <h1 style="color: #f1c40f;">Welcome to ZONK</h1>
+            <input type="text" id="nickname-input" placeholder="Enter your nickname..." maxlength="12">
+            <button id="btn-save-nick" class="action-btn">Continue</button>
+        </div>
+    </div>
+
+    <div id="lobby-screen" class="screen-container hidden">
+        <div class="modal-box">
+            <h2>Hello, <span id="display-nickname" style="color: #f1c40f;"></span>!</h2>
+            <div class="lobby-actions">
+                <button id="btn-play-bot" class="action-btn" style="width: 100%;">🤖 Play vs Bot</button>
+                <hr style="margin: 25px 0; border: 1px solid #34495e;">
+                <p>Play with a friend (Online PvP):</p>
+                <input type="text" id="room-input" placeholder="Room Code (e.g. 777)" maxlength="5">
+                <div style="display:flex; gap:10px; justify-content:center; margin-top: 10px;">
+                    <button id="btn-create-room" class="action-btn" style="background-color: #e67e22;">Create Room</button>
+                    <button id="btn-join-room" class="action-btn" style="background-color: #27ae60;">Join Room</button>
+                </div>
+                <p id="lobby-status" style="color: #e74c3c; font-size: 14px; margin-top: 15px;"></p>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-screen" class="main-wrapper hidden">
+        <div class="game-container">
+            <h1>ZONK</h1>
+            <div class="setup-panel" id="setup-panel">
+                <label for="target-score">Target Score: </label>
+                <input type="number" id="target-score-input" value="10000" step="500" min="1000">
+                <button id="btn-start-game">Start Game</button>
+            </div>
+            <div class="scoreboard">
+                <div class="player-panel active" id="Player-panel">
+                    <h2 id="player-name-label">Player</h2>
+                    <p>Total: <span id="Player-total">0</span></p>
+                </div>
+                <div class="player-panel" id="Bot-panel">
+                    <h2 id="opponent-name-label">Bot</h2>
+                    <p>Total: <span id="Bot-total">0</span></p>
+                </div>
+            </div>
+            <div class="turn-info">
+                <h3>Turn: <span id="current-turn">Player</span></h3>
+                <p>Current Score: <span id="turn-score">0</span></p>
+            </div>
+            
+            <div class="dice-container-wrapper">
+                 <div class="dice-container" id="dice-container"></div>
+            </div>
+
+            <div class="controls">
+                <button id="btn-roll">Roll Dice</button>
+                <button id="btn-bank" disabled>Bank Score</button>
+            </div>
+            <div id="message-log">Welcome! Set target score to start.</div>
+        </div>
+
+        <div class="rules-container">
+            <div class="lang-switch">
+                <button id="lang-en" class="active" onclick="switchLang('en')">ENG</button>
+                <button id="lang-ru" onclick="switchLang('ru')">РУС</button>
+            </div>
+
+            <div id="rules-en" class="rules-content">
+                <h2>Rules of Zonk</h2>
+                <p>The goal is to reach the target score before your opponent does.</p>
+                <ul>
+                    <li>Roll all 6 dice. Set aside at least one scoring die or combination.</li>
+                    <li>If you set aside all 6 dice, you get "Hot Dice" and earn a free reroll.</li>
+                    <li>If a roll yields no scoring dice, you "Zonk" and lose turn points.</li>
+                    <li>Hit "Bank Score" to end your turn safely.</li>
+                </ul>
+                <h3>How to Score</h3>
+                <div class="combo-item"><span><strong>The Golden One:</strong> Single 1 = 100 pts.</span><div class="example-dice" data-dice="1"></div></div>
+                <div class="combo-item"><span><strong>The Handy Five:</strong> Single 5 = 50 pts.</span><div class="example-dice" data-dice="5"></div></div>
+                <div class="combo-item"><span><strong>The Jackpot:</strong> Three 1s = 1000 pts.</span><div class="example-dice" data-dice="1,1,1"></div></div>
+                <div class="combo-item"><span><strong>Three of a Kind:</strong> Face value x 100 (e.g., three 3s = 300).</span><div class="example-dice" data-dice="3,3,3"></div></div>
+                <div class="combo-item"><span><strong>The Straight:</strong> 1 to 6 = 1500 pts.</span><div class="example-dice-small" data-dice="1,2,3,4,5,6"></div></div>
+                <div class="combo-item"><span><strong>Three Pairs:</strong> e.g., 2-2, 4-4, 6-6 = 1500 pts.</span><div class="example-dice-small" data-dice="2,2,4,4,6,6"></div></div>
+            </div>
+
+            <div id="rules-ru" class="rules-content hidden">
+                <h2>Правила игры Зонк</h2>
+                <p>Ваша цель — первым набрать заданное количество очков.</p>
+                <ul>
+                    <li>Бросьте все 6 кубиков. Отложите хотя бы один результативный кубик.</li>
+                    <li>Отложив все 6 кубиков, вы получаете «Горячие кости» и бросаете их снова.</li>
+                    <li>Если не выпало ни одной выигрышной комбинации — это «Зонк» (очки сгорают).</li>
+                    <li>Нажмите «Bank Score», чтобы забрать очки и передать ход.</li>
+                </ul>
+                <h3>Выигрышные комбинации</h3>
+                <div class="combo-item"><span><strong>Единица:</strong> 1 = 100 очков.</span><div class="example-dice" data-dice="1"></div></div>
+                <div class="combo-item"><span><strong>Пятерка:</strong> 5 = 50 очков.</span><div class="example-dice" data-dice="5"></div></div>
+                <div class="combo-item"><span><strong>Джекпот:</strong> Три единицы = 1000 очков.</span><div class="example-dice" data-dice="1,1,1"></div></div>
+                <div class="combo-item"><span><strong>Сеты:</strong> Три одинаковых кубика = Номинал x 100.</span><div class="example-dice" data-dice="3,3,3"></div></div>
+                <div class="combo-item"><span><strong>Стрит:</strong> От 1 до 6 = 1500 очков.</span><div class="example-dice-small" data-dice="1,2,3,4,5,6"></div></div>
+                <div class="combo-item"><span><strong>Три пары:</strong> Любые три пары = 1500 очков.</span><div class="example-dice-small" data-dice="2,2,4,4,6,6"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
