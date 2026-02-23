@@ -1,10 +1,10 @@
 // === 1. ПІДКЛЮЧЕННЯ ДО СЕРВЕРА ===
-const SERVER_URL = 'https://zonk-server.onrender.com'; 
+const SERVER_URL = 'https://ТВІЙ-СЕРВЕР.onrender.com'; // <--- ОБОВ'ЯЗКОВО ВСТАВ СВІЙ ЛІНК!
 const socket = io(SERVER_URL);
 
 let myNickname = sessionStorage.getItem('zonk_nickname') || '';
 let opponentName = "Bot";
-let gameMode = "bot"; // 'bot' або 'pvp'
+let gameMode = "bot"; 
 let currentRoom = null;
 let isMyTurn = true; 
 
@@ -12,7 +12,6 @@ let isMyTurn = true;
 const screens = { login: document.getElementById('login-screen'), lobby: document.getElementById('lobby-screen'), game: document.getElementById('game-screen') };
 function showScreen(screenName) { Object.values(screens).forEach(s => s.classList.add('hidden')); screens[screenName].classList.remove('hidden'); }
 
-// Перемикання мов (для правил)
 function switchLang(lang) {
     document.getElementById('rules-en').classList.toggle('hidden', lang !== 'en');
     document.getElementById('rules-ru').classList.toggle('hidden', lang !== 'ru');
@@ -20,7 +19,6 @@ function switchLang(lang) {
     document.getElementById('lang-ru').classList.toggle('active', lang === 'ru');
 }
 
-// Генерація 2D кубиків для правил
 function createFlatDie(value) {
     const die = document.createElement('div'); die.className = 'flat-die'; die.dataset.face = value;
     for (let i = 0; i < value; i++) { const dot = document.createElement('div'); dot.className = 'dot'; die.appendChild(dot); }
@@ -31,7 +29,6 @@ document.querySelectorAll('.example-dice, .example-dice-small').forEach(containe
     container.dataset.dice.split(',').map(Number).forEach(val => container.appendChild(createFlatDie(val)));
 });
 
-// Авторизація
 if (myNickname) { document.getElementById('display-nickname').innerText = myNickname; showScreen('lobby'); }
 
 document.getElementById('btn-save-nick').addEventListener('click', () => {
@@ -46,21 +43,20 @@ document.getElementById('btn-play-bot').addEventListener('click', () => {
     showScreen('game');
 });
 
-// Кнопка СТВОРИТИ кімнату
+// СТВОРЕННЯ КІМНАТИ (З цільовими очками)
 document.getElementById('btn-create-room').addEventListener('click', () => {
-    socket.emit('createRoom', { name: myNickname });
+    const ts = parseInt(document.getElementById('lobby-target-score').value) || 10000;
+    socket.emit('createRoom', { name: myNickname, targetScore: ts });
     document.getElementById('lobby-status').style.color = '#f1c40f';
     document.getElementById('lobby-status').innerText = "Connecting to server...";
 });
 
-// Кнопка ПРИЄДНАТИСЯ до кімнати
 document.getElementById('btn-join-room').addEventListener('click', () => {
     const code = document.getElementById('room-input').value.trim();
     if (code.length === 4) socket.emit('joinRoom', { roomCode: code, name: myNickname });
     else { document.getElementById('lobby-status').style.color = '#e74c3c'; document.getElementById('lobby-status').innerText = "Enter a valid 4-digit code!"; }
 });
 
-// Відповіді від сервера
 socket.on('roomCreated', (code) => {
     currentRoom = code;
     document.getElementById('lobby-status').style.color = '#2ecc71';
@@ -69,17 +65,21 @@ socket.on('roomCreated', (code) => {
 
 socket.on('gameStarted', (data) => {
     currentRoom = data.roomCode; gameMode = "pvp";
+    targetScore = data.targetScore; // Отримуємо спільні очки від сервера
+    
     if (data.p1.id === socket.id) { opponentName = data.p2.name; isMyTurn = true; } 
     else { opponentName = data.p1.name; isMyTurn = false; }
     
     document.getElementById('player-name-label').innerText = myNickname;
     document.getElementById('opponent-name-label').innerText = opponentName;
     document.getElementById('setup-panel').style.display = 'none'; 
-    targetScore = 10000; // PvP граємо до 10000 за замовчуванням
     
     resetGame();
     showScreen('game');
-    elements.messageLog.innerText = isMyTurn ? `Game started! Your turn, ${myNickname}!` : `Game started! Waiting for ${opponentName}...`;
+    
+    // Оновлюємо інтерфейс залежно від того, чий хід
+    updatePvPVisuals();
+    elements.messageLog.innerText = isMyTurn ? `Game started! First to ${targetScore}. Your turn, ${myNickname}!` : `Game started! First to ${targetScore}. Waiting for ${opponentName}...`;
 });
 
 socket.on('errorMsg', (msg) => {
@@ -122,8 +122,8 @@ socket.on('opponentRematch', () => {
 
 // === 4. ОСНОВНА ГРА ТА 3D КУБИКИ ===
 let scores = { Player: 0, Bot: 0 };
-let currentTurnScore = 0, tempSelectedScore = 0, diceCount = 6, targetScoreValue = 10000;
-let activePlayer = "Player";
+let currentTurnScore = 0, tempSelectedScore = 0, diceCount = 6, targetScore = 10000;
+let activePlayer = "Player"; // Використовується тільки для гри з Ботом
 const faceRotations = { 1:{x:0,y:0}, 2:{x:-90,y:0}, 3:{x:0,y:-90}, 4:{x:0,y:90}, 5:{x:90,y:0}, 6:{x:0,y:180} };
 
 const elements = {
@@ -190,7 +190,7 @@ function renderDiceWithAnimation(diceArray, callback) {
     });
     setTimeout(() => {
         diceElements.forEach((item) => {
-            if (activePlayer === "Player" && isMyTurn) { // Клікати можна тільки у свій хід
+            if (isMyTurn) { // Тільки той, чий зараз хід, може клікати!
                 item.wrapper.addEventListener('click', () => { item.wrapper.classList.toggle('selected'); updateSelectedScore(); });
             }
         });
@@ -215,17 +215,18 @@ function updateSelectedScore() {
     }
 }
 
+// === НОВА ЛОГІКА ЗМІНИ ХОДУ ===
 function switchTurn() {
     currentTurnScore = 0; tempSelectedScore = 0; diceCount = 6;
     elements.turnScoreDisplay.innerText = 0; elements.rollBtn.innerText = "Roll Dice";
-    document.getElementById(`${activePlayer}-panel`).classList.remove('active');
-    
-    activePlayer = activePlayer === "Player" ? "Bot" : "Player";
-    document.getElementById(`${activePlayer}-panel`).classList.add('active');
-    
+    elements.diceContainer.innerHTML = '';
+
     if (gameMode === "bot") {
+        document.getElementById(`${activePlayer}-panel`).classList.remove('active');
+        activePlayer = activePlayer === "Player" ? "Bot" : "Player";
+        document.getElementById(`${activePlayer}-panel`).classList.add('active');
+        
         elements.currentTurnDisplay.innerText = activePlayer === "Player" ? myNickname : "Bot";
-        elements.diceContainer.innerHTML = '';
         if (activePlayer === "Bot") {
             elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
             setTimeout(playBotTurn, 1000);
@@ -234,21 +235,29 @@ function switchTurn() {
             elements.messageLog.innerText = `Your turn, ${myNickname}!`;
         }
     } else if (gameMode === "pvp") {
-        isMyTurn = !isMyTurn; 
-        elements.currentTurnDisplay.innerText = isMyTurn ? myNickname : opponentName;
-        elements.diceContainer.innerHTML = '';
-        if (isMyTurn) {
-            elements.rollBtn.disabled = false; elements.bankBtn.disabled = true;
-            elements.messageLog.innerText = `Your turn, ${myNickname}!`;
-        } else {
-            elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
-            elements.messageLog.innerText = `Waiting for ${opponentName}...`;
-        }
+        isMyTurn = !isMyTurn; // Передаємо хід
+        updatePvPVisuals();   // Оновлюємо підсвітку і кнопки
+    }
+}
+
+function updatePvPVisuals() {
+    // В онлайні 'Player-panel' - це завжди ти, а 'Bot-panel' - це завжди опонент.
+    document.getElementById('Player-panel').classList.toggle('active', isMyTurn);
+    document.getElementById('Bot-panel').classList.toggle('active', !isMyTurn);
+    
+    elements.currentTurnDisplay.innerText = isMyTurn ? myNickname : opponentName;
+
+    if (isMyTurn) {
+        elements.rollBtn.disabled = false; elements.bankBtn.disabled = true;
+        elements.messageLog.innerText = `Your turn, ${myNickname}!`;
+    } else {
+        elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
+        elements.messageLog.innerText = `Waiting for ${opponentName}...`;
     }
 }
 
 elements.rollBtn.addEventListener('click', () => {
-    if (!isMyTurn && gameMode === 'pvp') return; 
+    if (!isMyTurn) return; 
 
     if (tempSelectedScore > 0) {
         currentTurnScore += tempSelectedScore;
@@ -266,7 +275,7 @@ elements.rollBtn.addEventListener('click', () => {
 
     renderDiceWithAnimation(rollResult, () => {
         if (!hasScoringDice(rollResult)) {
-            elements.messageLog.innerText = `ZONK! ${myNickname} rolled no combos.`;
+            elements.messageLog.innerText = `ZONK! You rolled no combos.`;
             if (gameMode === 'pvp') socket.emit('zonk', { roomCode: currentRoom });
             setTimeout(switchTurn, 2000);
         } else {
@@ -303,8 +312,13 @@ function resetGame() {
     document.getElementById('Player-total').innerText = 0; document.getElementById('Bot-total').innerText = 0;
     elements.turnScoreDisplay.innerText = 0; elements.diceContainer.innerHTML = '';
     elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
-    activePlayer = "Bot"; 
-    switchTurn();
+    
+    if (gameMode === 'bot') {
+        activePlayer = "Bot"; 
+        switchTurn();
+    } else {
+        updatePvPVisuals();
+    }
 }
 
 function getBestBotScore(arr) {
