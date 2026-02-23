@@ -1,6 +1,18 @@
-const SERVER_URL = 'https://zonk-server.onrender.com';
+// === 1. ПІДКЛЮЧЕННЯ ДО СЕРВЕРА ===
+const SERVER_URL = 'https://zonk-server.onrender.com'; 
+const socket = io(SERVER_URL);
 
-// --- 1. ПЕРЕМИКАННЯ МОВ ---
+let myNickname = sessionStorage.getItem('zonk_nickname') || '';
+let opponentName = "Bot";
+let gameMode = "bot"; // 'bot' або 'pvp'
+let currentRoom = null;
+let isMyTurn = true; 
+
+// === 2. ЕКРАНИ ТА UI ===
+const screens = { login: document.getElementById('login-screen'), lobby: document.getElementById('lobby-screen'), game: document.getElementById('game-screen') };
+function showScreen(screenName) { Object.values(screens).forEach(s => s.classList.add('hidden')); screens[screenName].classList.remove('hidden'); }
+
+// Перемикання мов (для правил)
 function switchLang(lang) {
     document.getElementById('rules-en').classList.toggle('hidden', lang !== 'en');
     document.getElementById('rules-ru').classList.toggle('hidden', lang !== 'ru');
@@ -8,13 +20,10 @@ function switchLang(lang) {
     document.getElementById('lang-ru').classList.toggle('active', lang === 'ru');
 }
 
-// ГЕНЕРАЦІЯ 2D КУБИКІВ (Для правил)
+// Генерація 2D кубиків для правил
 function createFlatDie(value) {
-    const die = document.createElement('div');
-    die.className = 'flat-die'; die.dataset.face = value;
-    for (let i = 0; i < value; i++) {
-        const dot = document.createElement('div'); dot.className = 'dot'; die.appendChild(dot);
-    }
+    const die = document.createElement('div'); die.className = 'flat-die'; die.dataset.face = value;
+    for (let i = 0; i < value; i++) { const dot = document.createElement('div'); dot.className = 'dot'; die.appendChild(dot); }
     return die;
 }
 document.querySelectorAll('.example-dice, .example-dice-small').forEach(container => {
@@ -22,60 +31,99 @@ document.querySelectorAll('.example-dice, .example-dice-small').forEach(containe
     container.dataset.dice.split(',').map(Number).forEach(val => container.appendChild(createFlatDie(val)));
 });
 
-// --- 2. ЛОГІКА ЕКРАНІВ ТА НІКНЕЙМІВ ---
-let myNickname = sessionStorage.getItem('zonk_nickname') || '';
-let opponentName = "Bot";
-let gameMode = "bot"; // "bot" або "pvp"
-
-const screens = {
-    login: document.getElementById('login-screen'),
-    lobby: document.getElementById('lobby-screen'),
-    game: document.getElementById('game-screen')
-};
-
-function showScreen(screenName) {
-    Object.values(screens).forEach(s => s.classList.add('hidden'));
-    screens[screenName].classList.remove('hidden');
-}
-
-// Якщо нік вже є — кидаємо відразу в лобі
-if (myNickname) {
-    document.getElementById('display-nickname').innerText = myNickname;
-    showScreen('lobby');
-}
+// Авторизація
+if (myNickname) { document.getElementById('display-nickname').innerText = myNickname; showScreen('lobby'); }
 
 document.getElementById('btn-save-nick').addEventListener('click', () => {
     const input = document.getElementById('nickname-input').value.trim();
-    if (input) {
-        myNickname = input;
-        sessionStorage.setItem('zonk_nickname', myNickname);
-        document.getElementById('display-nickname').innerText = myNickname;
-        showScreen('lobby');
-    }
+    if (input) { myNickname = input; sessionStorage.setItem('zonk_nickname', myNickname); document.getElementById('display-nickname').innerText = myNickname; showScreen('lobby'); }
 });
 
-// --- 3. ОБРОБКА КНОПОК ЛОБІ ---
+// === 3. ЛОБІ ТА МУЛЬТИПЛЕЄР ===
 document.getElementById('btn-play-bot').addEventListener('click', () => {
-    gameMode = "bot";
-    opponentName = "Bot";
-    document.getElementById('player-name-label').innerText = myNickname;
-    document.getElementById('opponent-name-label').innerText = opponentName;
+    gameMode = "bot"; opponentName = "Bot"; isMyTurn = true;
+    document.getElementById('player-name-label').innerText = myNickname; document.getElementById('opponent-name-label').innerText = opponentName;
     showScreen('game');
 });
 
+// Кнопка СТВОРИТИ кімнату
 document.getElementById('btn-create-room').addEventListener('click', () => {
-    document.getElementById('lobby-status').innerText = "Сервер ще не підключено! Очікуйте наступного кроку.";
+    socket.emit('createRoom', { name: myNickname });
+    document.getElementById('lobby-status').style.color = '#f1c40f';
+    document.getElementById('lobby-status').innerText = "Connecting to server...";
 });
+
+// Кнопка ПРИЄДНАТИСЯ до кімнати
 document.getElementById('btn-join-room').addEventListener('click', () => {
-    document.getElementById('lobby-status').innerText = "Сервер ще не підключено! Очікуйте наступного кроку.";
+    const code = document.getElementById('room-input').value.trim();
+    if (code.length === 4) socket.emit('joinRoom', { roomCode: code, name: myNickname });
+    else { document.getElementById('lobby-status').style.color = '#e74c3c'; document.getElementById('lobby-status').innerText = "Enter a valid 4-digit code!"; }
 });
 
+// Відповіді від сервера
+socket.on('roomCreated', (code) => {
+    currentRoom = code;
+    document.getElementById('lobby-status').style.color = '#2ecc71';
+    document.getElementById('lobby-status').innerText = `Room created! Code: ${code}. Waiting for opponent...`;
+});
 
-// --- 4. ОСНОВНА ГРА (З КНОПКОЮ РЕМАТЧУ) ---
+socket.on('gameStarted', (data) => {
+    currentRoom = data.roomCode; gameMode = "pvp";
+    if (data.p1.id === socket.id) { opponentName = data.p2.name; isMyTurn = true; } 
+    else { opponentName = data.p1.name; isMyTurn = false; }
+    
+    document.getElementById('player-name-label').innerText = myNickname;
+    document.getElementById('opponent-name-label').innerText = opponentName;
+    document.getElementById('setup-panel').style.display = 'none'; 
+    targetScore = 10000; // PvP граємо до 10000 за замовчуванням
+    
+    resetGame();
+    showScreen('game');
+    elements.messageLog.innerText = isMyTurn ? `Game started! Your turn, ${myNickname}!` : `Game started! Waiting for ${opponentName}...`;
+});
+
+socket.on('errorMsg', (msg) => {
+    document.getElementById('lobby-status').style.color = '#e74c3c';
+    document.getElementById('lobby-status').innerText = msg;
+});
+
+socket.on('opponentDisconnected', () => {
+    alert("Opponent disconnected! Returning to lobby.");
+    location.reload(); 
+});
+
+// Синхронізація геймплею
+socket.on('opponentRolled', (data) => {
+    elements.messageLog.innerText = `${opponentName} is rolling...`;
+    currentTurnScore = data.currentTurnScore;
+    elements.turnScoreDisplay.innerText = currentTurnScore;
+    renderDiceWithAnimation(data.rollResult, () => {
+        elements.messageLog.innerText = `${opponentName} is choosing dice...`;
+    });
+});
+
+socket.on('opponentBanked', (data) => {
+    scores.Bot = data.totalScore; 
+    document.getElementById('Bot-total').innerText = scores.Bot;
+    elements.messageLog.innerText = `${opponentName} banked ${data.turnScore} points!`;
+    if (scores.Bot >= targetScore) endGame(opponentName);
+    else setTimeout(switchTurn, 1500);
+});
+
+socket.on('opponentZonked', () => {
+    elements.messageLog.innerText = `ZONK! ${opponentName} lost their points.`;
+    setTimeout(switchTurn, 2000);
+});
+
+socket.on('opponentRematch', () => {
+    alert(`${opponentName} wants a rematch!`);
+    resetGame();
+});
+
+// === 4. ОСНОВНА ГРА ТА 3D КУБИКИ ===
 let scores = { Player: 0, Bot: 0 };
-let currentTurnScore = 0, tempSelectedScore = 0;
-let activePlayer = "Player", diceCount = 6, targetScore = 10000;
-
+let currentTurnScore = 0, tempSelectedScore = 0, diceCount = 6, targetScoreValue = 10000;
+let activePlayer = "Player";
 const faceRotations = { 1:{x:0,y:0}, 2:{x:-90,y:0}, 3:{x:0,y:-90}, 4:{x:0,y:90}, 5:{x:90,y:0}, 6:{x:0,y:180} };
 
 const elements = {
@@ -91,25 +139,10 @@ elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
 elements.startGameBtn.addEventListener('click', () => {
     targetScore = parseInt(elements.targetScoreInput.value) || 10000;
     elements.setupPanel.style.display = 'none';
-    elements.currentTurnDisplay.innerText = myNickname; // Показуємо нік
+    elements.currentTurnDisplay.innerText = myNickname;
     elements.messageLog.innerText = `Game started! First to ${targetScore} wins. Your turn, ${myNickname}!`;
     elements.rollBtn.disabled = false;
 });
-
-// ФУНКЦІЯ РЕМАТЧУ
-function resetGame() {
-    scores = { Player: 0, Bot: 0 };
-    currentTurnScore = 0; tempSelectedScore = 0; diceCount = 6;
-    activePlayer = "Bot"; // Трюк: ставимо бота, щоб switchTurn перемикнув на Player
-    document.getElementById('Player-total').innerText = 0;
-    document.getElementById('Bot-total').innerText = 0;
-    elements.turnScoreDisplay.innerText = 0;
-    elements.diceContainer.innerHTML = '';
-    elements.setupPanel.style.display = 'block'; // Повертаємо вибір очок
-    elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
-    elements.messageLog.innerText = "Game reset. Set target score to start new game.";
-    switchTurn();
-}
 
 function calculateSelectedScore(arr) {
     if (arr.length === 0) return 0;
@@ -157,7 +190,7 @@ function renderDiceWithAnimation(diceArray, callback) {
     });
     setTimeout(() => {
         diceElements.forEach((item) => {
-            if (activePlayer === "Player") {
+            if (activePlayer === "Player" && isMyTurn) { // Клікати можна тільки у свій хід
                 item.wrapper.addEventListener('click', () => { item.wrapper.classList.toggle('selected'); updateSelectedScore(); });
             }
         });
@@ -186,23 +219,37 @@ function switchTurn() {
     currentTurnScore = 0; tempSelectedScore = 0; diceCount = 6;
     elements.turnScoreDisplay.innerText = 0; elements.rollBtn.innerText = "Roll Dice";
     document.getElementById(`${activePlayer}-panel`).classList.remove('active');
+    
     activePlayer = activePlayer === "Player" ? "Bot" : "Player";
     document.getElementById(`${activePlayer}-panel`).classList.add('active');
     
-    // Показуємо правильний нік у статусі ходу
-    elements.currentTurnDisplay.innerText = activePlayer === "Player" ? myNickname : opponentName; 
-    elements.diceContainer.innerHTML = '';
-    
-    if (activePlayer === "Bot" && gameMode === "bot") {
-        elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
-        setTimeout(playBotTurn, 1000);
-    } else if (activePlayer === "Player" && elements.setupPanel.style.display === 'none') {
-        elements.rollBtn.disabled = false; elements.bankBtn.disabled = true;
-        elements.messageLog.innerText = `Your turn, ${myNickname}! Roll the dice.`;
+    if (gameMode === "bot") {
+        elements.currentTurnDisplay.innerText = activePlayer === "Player" ? myNickname : "Bot";
+        elements.diceContainer.innerHTML = '';
+        if (activePlayer === "Bot") {
+            elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
+            setTimeout(playBotTurn, 1000);
+        } else {
+            elements.rollBtn.disabled = false; elements.bankBtn.disabled = true;
+            elements.messageLog.innerText = `Your turn, ${myNickname}!`;
+        }
+    } else if (gameMode === "pvp") {
+        isMyTurn = !isMyTurn; 
+        elements.currentTurnDisplay.innerText = isMyTurn ? myNickname : opponentName;
+        elements.diceContainer.innerHTML = '';
+        if (isMyTurn) {
+            elements.rollBtn.disabled = false; elements.bankBtn.disabled = true;
+            elements.messageLog.innerText = `Your turn, ${myNickname}!`;
+        } else {
+            elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
+            elements.messageLog.innerText = `Waiting for ${opponentName}...`;
+        }
     }
 }
 
 elements.rollBtn.addEventListener('click', () => {
+    if (!isMyTurn && gameMode === 'pvp') return; 
+
     if (tempSelectedScore > 0) {
         currentTurnScore += tempSelectedScore;
         diceCount -= document.querySelectorAll('#dice-container .cube-wrapper.selected').length;
@@ -211,38 +258,56 @@ elements.rollBtn.addEventListener('click', () => {
     }
     elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
     elements.messageLog.innerText = "Rolling...";
+    
     let rollResult = [];
     for (let i = 0; i < diceCount; i++) rollResult.push(Math.floor(Math.random() * 6) + 1);
+    
+    if (gameMode === 'pvp') socket.emit('rollDice', { roomCode: currentRoom, rollResult, currentTurnScore });
+
     renderDiceWithAnimation(rollResult, () => {
         if (!hasScoringDice(rollResult)) {
-            elements.messageLog.innerText = `ZONK! ${activePlayer === 'Player' ? myNickname : opponentName} rolled no combos.`;
+            elements.messageLog.innerText = `ZONK! ${myNickname} rolled no combos.`;
+            if (gameMode === 'pvp') socket.emit('zonk', { roomCode: currentRoom });
             setTimeout(switchTurn, 2000);
-        } else if (activePlayer === "Player") {
+        } else {
             elements.messageLog.innerText = "Select scoring combinations.";
         }
     });
 });
 
 elements.bankBtn.addEventListener('click', () => {
-    scores[activePlayer] += (currentTurnScore + tempSelectedScore);
-    document.getElementById(`${activePlayer}-total`).innerText = scores[activePlayer];
+    scores.Player += (currentTurnScore + tempSelectedScore);
+    document.getElementById('Player-total').innerText = scores.Player;
     
-    let displayName = activePlayer === "Player" ? myNickname : opponentName;
+    if (gameMode === 'pvp') socket.emit('bank', { roomCode: currentRoom, turnScore: currentTurnScore + tempSelectedScore, totalScore: scores.Player });
+
+    if (scores.Player >= targetScore) { endGame(myNickname); return; }
     
-    if (scores[activePlayer] >= targetScore) {
-        elements.messageLog.innerHTML = `🎉 ${displayName} WINS with ${scores[activePlayer]} points! 🎉<br><button id="btn-rematch" class="btn-rematch">🔄 Rematch</button>`;
-        elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
-        document.getElementById('btn-rematch').addEventListener('click', resetGame);
-        return;
-    }
-    
-    elements.messageLog.innerText = `${displayName} banked ${currentTurnScore + tempSelectedScore} points!`;
+    elements.messageLog.innerText = `You banked ${currentTurnScore + tempSelectedScore} points!`;
     elements.rollBtn.disabled = true; elements.bankBtn.disabled = true; 
     setTimeout(switchTurn, 1500);
 });
 
-// ЛОГІКА РОЗУМНОГО БОТА (Без змін, працює ідеально)
-function getBestBotScore(arr) { /* ... код підрахунку ... */ 
+function endGame(winnerName) {
+    elements.messageLog.innerHTML = `🎉 ${winnerName} WINS! 🎉<br><button id="btn-rematch" class="btn-rematch">🔄 Rematch</button>`;
+    elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
+    document.getElementById('btn-rematch').addEventListener('click', () => {
+        if (gameMode === 'pvp') socket.emit('rematch', { roomCode: currentRoom });
+        resetGame();
+    });
+}
+
+function resetGame() {
+    scores = { Player: 0, Bot: 0 };
+    currentTurnScore = 0; tempSelectedScore = 0; diceCount = 6;
+    document.getElementById('Player-total').innerText = 0; document.getElementById('Bot-total').innerText = 0;
+    elements.turnScoreDisplay.innerText = 0; elements.diceContainer.innerHTML = '';
+    elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
+    activePlayer = "Bot"; 
+    switchTurn();
+}
+
+function getBestBotScore(arr) {
     let counts = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0}; arr.forEach(val => counts[val]++);
     let score = 0, scoringDice = 0;
     if (arr.length === 6) {
@@ -260,49 +325,31 @@ function getBestBotScore(arr) { /* ... код підрахунку ... */
 function playBotTurn() {
     if (scores.Player >= targetScore || scores.Bot >= targetScore) return;
     elements.messageLog.innerText = `${opponentName} is calculating probabilities...`;
-    let rollResult = [];
-    for (let i = 0; i < diceCount; i++) rollResult.push(Math.floor(Math.random() * 6) + 1);
+    let rollResult = []; for (let i = 0; i < diceCount; i++) rollResult.push(Math.floor(Math.random() * 6) + 1);
 
     renderDiceWithAnimation(rollResult, () => {
         if (!hasScoringDice(rollResult)) {
             elements.messageLog.innerText = `ZONK! ${opponentName} pushed too hard.`;
             setTimeout(switchTurn, 2000);
         } else {
-            let botResult = getBestBotScore(rollResult);
-            currentTurnScore += botResult.score;
-            elements.turnScoreDisplay.innerText = currentTurnScore;
-            diceCount -= botResult.dice;
-            let hotDice = false;
-            if (diceCount === 0) { diceCount = 6; hotDice = true; }
+            let botResult = getBestBotScore(rollResult); currentTurnScore += botResult.score;
+            elements.turnScoreDisplay.innerText = currentTurnScore; diceCount -= botResult.dice;
+            let hotDice = false; if (diceCount === 0) { diceCount = 6; hotDice = true; }
 
             setTimeout(() => {
-                let shouldRollAgain = false;
-                let botTotalPotential = scores.Bot + currentTurnScore;
-
+                let shouldRollAgain = false, botTotalPotential = scores.Bot + currentTurnScore;
                 if (botTotalPotential >= targetScore) shouldRollAgain = false;
                 else if (hotDice) { shouldRollAgain = true; elements.messageLog.innerText = `${opponentName} got Hot Dice! Rolling all 6...`; } 
                 else if (scores.Player >= targetScore * 0.8 && scores.Bot < scores.Player) {
-                    if (diceCount >= 3) shouldRollAgain = true;
-                    else if (diceCount === 2 && currentTurnScore < 1000) shouldRollAgain = true;
-                    else if (diceCount === 1 && currentTurnScore < 400) shouldRollAgain = true;
+                    if (diceCount >= 3) shouldRollAgain = true; else if (diceCount === 2 && currentTurnScore < 1000) shouldRollAgain = true; else if (diceCount === 1 && currentTurnScore < 400) shouldRollAgain = true;
                 } else {
-                    if (diceCount >= 4) shouldRollAgain = currentTurnScore < 1500; 
-                    else if (diceCount === 3) shouldRollAgain = currentTurnScore < 600;
-                    else if (diceCount === 2) shouldRollAgain = currentTurnScore < 300;
-                    else if (diceCount === 1) shouldRollAgain = false;
+                    if (diceCount >= 4) shouldRollAgain = currentTurnScore < 1500; else if (diceCount === 3) shouldRollAgain = currentTurnScore < 600; else if (diceCount === 2) shouldRollAgain = currentTurnScore < 300; else if (diceCount === 1) shouldRollAgain = false;
                 }
 
-                if (shouldRollAgain && !hotDice) {
-                    elements.messageLog.innerText = `${opponentName} has ${diceCount} dice left. Decides to push its luck!`;
-                    setTimeout(playBotTurn, 1500);
-                } else if (shouldRollAgain && hotDice) {
-                    setTimeout(playBotTurn, 1500); 
-                } else {
-                    elements.messageLog.innerText = `${opponentName} analyzes the risk and banks ${currentTurnScore} points.`;
-                    setTimeout(() => { elements.bankBtn.disabled = false; elements.bankBtn.click(); }, 1200); 
-                }
+                if (shouldRollAgain && !hotDice) { elements.messageLog.innerText = `${opponentName} has ${diceCount} dice left. Decides to push its luck!`; setTimeout(playBotTurn, 1500); } 
+                else if (shouldRollAgain && hotDice) setTimeout(playBotTurn, 1500); 
+                else { elements.messageLog.innerText = `${opponentName} analyzes the risk and banks ${currentTurnScore} points.`; setTimeout(() => { elements.bankBtn.disabled = false; elements.bankBtn.click(); }, 1200); }
             }, 1500);
         }
     });
-
 }
