@@ -1,3 +1,5 @@
+const SERVER_URL = 'https://zonk-server.onrender.com';
+
 // --- 1. ПЕРЕМИКАННЯ МОВ ---
 function switchLang(lang) {
     document.getElementById('rules-en').classList.toggle('hidden', lang !== 'en');
@@ -302,4 +304,5 @@ function playBotTurn() {
             }, 1500);
         }
     });
+
 }
