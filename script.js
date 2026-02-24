@@ -1,10 +1,11 @@
 // === 1. ПІДКЛЮЧЕННЯ ДО СЕРВЕРА ===
-const SERVER_URL = 'https://ТВІЙ-СЕРВЕР.onrender.com'; // <--- ОБОВ'ЯЗКОВО ВСТАВ СВІЙ ЛІНК!
+// ОБОВ'ЯЗКОВО ЗАМІНИ ЛІНК НИЖЧЕ НА СВІЙ З RENDER! (без слеша / в кінці)
+const SERVER_URL = 'https://ТВІЙ-СЕРВЕР.onrender.com'; 
 const socket = io(SERVER_URL);
 
 let myNickname = sessionStorage.getItem('zonk_nickname') || '';
 let opponentName = "Bot";
-let gameMode = "bot"; 
+let gameMode = "bot"; // 'bot' або 'pvp'
 let currentRoom = null;
 let isMyTurn = true; 
 
@@ -43,12 +44,12 @@ document.getElementById('btn-play-bot').addEventListener('click', () => {
     showScreen('game');
 });
 
-// СТВОРЕННЯ КІМНАТИ (З цільовими очками)
+// Створення кімнати
 document.getElementById('btn-create-room').addEventListener('click', () => {
     const ts = parseInt(document.getElementById('lobby-target-score').value) || 10000;
     socket.emit('createRoom', { name: myNickname, targetScore: ts });
     document.getElementById('lobby-status').style.color = '#f1c40f';
-    document.getElementById('lobby-status').innerText = "Connecting to server...";
+    document.getElementById('lobby-status').innerText = "Connecting to server... (If asleep, takes ~40s)";
 });
 
 document.getElementById('btn-join-room').addEventListener('click', () => {
@@ -65,7 +66,7 @@ socket.on('roomCreated', (code) => {
 
 socket.on('gameStarted', (data) => {
     currentRoom = data.roomCode; gameMode = "pvp";
-    targetScore = data.targetScore; // Отримуємо спільні очки від сервера
+    targetScore = data.targetScore; 
     
     if (data.p1.id === socket.id) { opponentName = data.p2.name; isMyTurn = true; } 
     else { opponentName = data.p1.name; isMyTurn = false; }
@@ -77,7 +78,6 @@ socket.on('gameStarted', (data) => {
     resetGame();
     showScreen('game');
     
-    // Оновлюємо інтерфейс залежно від того, чий хід
     updatePvPVisuals();
     elements.messageLog.innerText = isMyTurn ? `Game started! First to ${targetScore}. Your turn, ${myNickname}!` : `Game started! First to ${targetScore}. Waiting for ${opponentName}...`;
 });
@@ -92,7 +92,7 @@ socket.on('opponentDisconnected', () => {
     location.reload(); 
 });
 
-// Синхронізація геймплею
+// Синхронізація геймплею PvP
 socket.on('opponentRolled', (data) => {
     elements.messageLog.innerText = `${opponentName} is rolling...`;
     currentTurnScore = data.currentTurnScore;
@@ -120,10 +120,10 @@ socket.on('opponentRematch', () => {
     resetGame();
 });
 
-// === 4. ОСНОВНА ГРА ТА 3D КУБИКИ ===
+// === 4. ОСНОВНА ГРА ТА ЛОГІКА ===
 let scores = { Player: 0, Bot: 0 };
 let currentTurnScore = 0, tempSelectedScore = 0, diceCount = 6, targetScore = 10000;
-let activePlayer = "Player"; // Використовується тільки для гри з Ботом
+let activePlayer = "Player"; 
 const faceRotations = { 1:{x:0,y:0}, 2:{x:-90,y:0}, 3:{x:0,y:-90}, 4:{x:0,y:90}, 5:{x:90,y:0}, 6:{x:0,y:180} };
 
 const elements = {
@@ -190,7 +190,8 @@ function renderDiceWithAnimation(diceArray, callback) {
     });
     setTimeout(() => {
         diceElements.forEach((item) => {
-            if (isMyTurn) { // Тільки той, чий зараз хід, може клікати!
+            // Клікати можна лише в свій хід (чи проти бота, чи в PvP)
+            if ((gameMode === "bot" && activePlayer === "Player") || (gameMode === "pvp" && isMyTurn)) {
                 item.wrapper.addEventListener('click', () => { item.wrapper.classList.toggle('selected'); updateSelectedScore(); });
             }
         });
@@ -215,18 +216,17 @@ function updateSelectedScore() {
     }
 }
 
-// === НОВА ЛОГІКА ЗМІНИ ХОДУ ===
 function switchTurn() {
     currentTurnScore = 0; tempSelectedScore = 0; diceCount = 6;
     elements.turnScoreDisplay.innerText = 0; elements.rollBtn.innerText = "Roll Dice";
-    elements.diceContainer.innerHTML = '';
-
+    document.getElementById(`${activePlayer}-panel`).classList.remove('active');
+    
     if (gameMode === "bot") {
-        document.getElementById(`${activePlayer}-panel`).classList.remove('active');
         activePlayer = activePlayer === "Player" ? "Bot" : "Player";
         document.getElementById(`${activePlayer}-panel`).classList.add('active');
-        
         elements.currentTurnDisplay.innerText = activePlayer === "Player" ? myNickname : "Bot";
+        elements.diceContainer.innerHTML = '';
+        
         if (activePlayer === "Bot") {
             elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
             setTimeout(playBotTurn, 1000);
@@ -235,16 +235,15 @@ function switchTurn() {
             elements.messageLog.innerText = `Your turn, ${myNickname}!`;
         }
     } else if (gameMode === "pvp") {
-        isMyTurn = !isMyTurn; // Передаємо хід
-        updatePvPVisuals();   // Оновлюємо підсвітку і кнопки
+        isMyTurn = !isMyTurn; 
+        elements.diceContainer.innerHTML = '';
+        updatePvPVisuals();
     }
 }
 
 function updatePvPVisuals() {
-    // В онлайні 'Player-panel' - це завжди ти, а 'Bot-panel' - це завжди опонент.
     document.getElementById('Player-panel').classList.toggle('active', isMyTurn);
     document.getElementById('Bot-panel').classList.toggle('active', !isMyTurn);
-    
     elements.currentTurnDisplay.innerText = isMyTurn ? myNickname : opponentName;
 
     if (isMyTurn) {
@@ -257,7 +256,7 @@ function updatePvPVisuals() {
 }
 
 elements.rollBtn.addEventListener('click', () => {
-    if (!isMyTurn) return; 
+    if (gameMode === 'pvp' && !isMyTurn) return; 
 
     if (tempSelectedScore > 0) {
         currentTurnScore += tempSelectedScore;
@@ -284,37 +283,41 @@ elements.rollBtn.addEventListener('click', () => {
     });
 });
 
+// ФІКС КНОПКИ БАНКУ
 elements.bankBtn.addEventListener('click', () => {
     let bankedPoints = currentTurnScore + tempSelectedScore;
-    let displayMsg = "";
-
-    // Перевіряємо, хто саме зараз зберігає очки
+    
+    // Якщо це гра з Ботом і зараз його хід
     if (gameMode === "bot" && activePlayer === "Bot") {
-        // Очки зберігає БОТ
         scores.Bot += bankedPoints;
         document.getElementById('Bot-total').innerText = scores.Bot;
-        displayMsg = `${opponentName} banked ${bankedPoints} points!`;
-
+        elements.messageLog.innerText = `${opponentName} banked ${bankedPoints} points!`;
         if (scores.Bot >= targetScore) { endGame(opponentName); return; }
-    } else {
-        // Очки зберігаєш ТИ (граючи проти бота або в PvP)
+    } 
+    // Якщо це твій хід (у грі з ботом або в PvP)
+    else {
         scores.Player += bankedPoints;
         document.getElementById('Player-total').innerText = scores.Player;
-        displayMsg = `You banked ${bankedPoints} points!`;
+        elements.messageLog.innerText = `You banked ${bankedPoints} points!`;
         
-        // Відправляємо дані на сервер, якщо це PvP
         if (gameMode === 'pvp') {
             socket.emit('bank', { roomCode: currentRoom, turnScore: bankedPoints, totalScore: scores.Player });
         }
-
         if (scores.Player >= targetScore) { endGame(myNickname); return; }
     }
     
-    // Виводимо правильне повідомлення
-    elements.messageLog.innerText = displayMsg;
     elements.rollBtn.disabled = true; elements.bankBtn.disabled = true; 
     setTimeout(switchTurn, 1500);
 });
+
+function endGame(winnerName) {
+    elements.messageLog.innerHTML = `🎉 ${winnerName} WINS! 🎉<br><button id="btn-rematch" class="btn-rematch">🔄 Rematch</button>`;
+    elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
+    document.getElementById('btn-rematch').addEventListener('click', () => {
+        if (gameMode === 'pvp') socket.emit('rematch', { roomCode: currentRoom });
+        resetGame();
+    });
+}
 
 function resetGame() {
     scores = { Player: 0, Bot: 0 };
@@ -377,4 +380,3 @@ function playBotTurn() {
         }
     });
 }
-
