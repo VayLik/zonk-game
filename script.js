@@ -1,6 +1,6 @@
 // === 1. ПІДКЛЮЧЕННЯ ДО СЕРВЕРА ===
 // ОБОВ'ЯЗКОВО ЗАМІНИ ЛІНК НИЖЧЕ НА СВІЙ З RENDER! (без слеша / в кінці)
-const SERVER_URL = 'https://ТВІЙ-СЕРВЕР.onrender.com'; 
+const SERVER_URL = 'https://zonk-server.onrender.com'; 
 const socket = io(SERVER_URL);
 
 let myNickname = sessionStorage.getItem('zonk_nickname') || '';
@@ -380,3 +380,4 @@ function playBotTurn() {
         }
     });
 }
+
