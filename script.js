@@ -285,26 +285,36 @@ elements.rollBtn.addEventListener('click', () => {
 });
 
 elements.bankBtn.addEventListener('click', () => {
-    scores.Player += (currentTurnScore + tempSelectedScore);
-    document.getElementById('Player-total').innerText = scores.Player;
-    
-    if (gameMode === 'pvp') socket.emit('bank', { roomCode: currentRoom, turnScore: currentTurnScore + tempSelectedScore, totalScore: scores.Player });
+    let bankedPoints = currentTurnScore + tempSelectedScore;
+    let displayMsg = "";
 
-    if (scores.Player >= targetScore) { endGame(myNickname); return; }
+    // Перевіряємо, хто саме зараз зберігає очки
+    if (gameMode === "bot" && activePlayer === "Bot") {
+        // Очки зберігає БОТ
+        scores.Bot += bankedPoints;
+        document.getElementById('Bot-total').innerText = scores.Bot;
+        displayMsg = `${opponentName} banked ${bankedPoints} points!`;
+
+        if (scores.Bot >= targetScore) { endGame(opponentName); return; }
+    } else {
+        // Очки зберігаєш ТИ (граючи проти бота або в PvP)
+        scores.Player += bankedPoints;
+        document.getElementById('Player-total').innerText = scores.Player;
+        displayMsg = `You banked ${bankedPoints} points!`;
+        
+        // Відправляємо дані на сервер, якщо це PvP
+        if (gameMode === 'pvp') {
+            socket.emit('bank', { roomCode: currentRoom, turnScore: bankedPoints, totalScore: scores.Player });
+        }
+
+        if (scores.Player >= targetScore) { endGame(myNickname); return; }
+    }
     
-    elements.messageLog.innerText = `You banked ${currentTurnScore + tempSelectedScore} points!`;
+    // Виводимо правильне повідомлення
+    elements.messageLog.innerText = displayMsg;
     elements.rollBtn.disabled = true; elements.bankBtn.disabled = true; 
     setTimeout(switchTurn, 1500);
 });
-
-function endGame(winnerName) {
-    elements.messageLog.innerHTML = `🎉 ${winnerName} WINS! 🎉<br><button id="btn-rematch" class="btn-rematch">🔄 Rematch</button>`;
-    elements.rollBtn.disabled = true; elements.bankBtn.disabled = true;
-    document.getElementById('btn-rematch').addEventListener('click', () => {
-        if (gameMode === 'pvp') socket.emit('rematch', { roomCode: currentRoom });
-        resetGame();
-    });
-}
 
 function resetGame() {
     scores = { Player: 0, Bot: 0 };
@@ -367,3 +377,4 @@ function playBotTurn() {
         }
     });
 }
+
